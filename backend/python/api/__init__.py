@@ -1,0 +1,1 @@
+"""SmartSupply FastAPI backend."""

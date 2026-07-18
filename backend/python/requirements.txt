@@ -1,5 +1,7 @@
-streamlit
+﻿streamlit
 pandas
 pyodbc
 plotly
 python-dotenv
+fastapi
+uvicorn[standard]
