@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+
+# Środowisko i sekrety
+.env
+.env.*
+!.env.example
+secrets.json
+appsettings.Development.json
+
+# Bazy i kopie
+*.bak
+*.mdf
+*.ldf
+*.db
+*.sqlite
+*.sqlite3
+
+# Dane robocze
+data/
+exports/
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# Android
+.gradle/
+local.properties
+**/build/
+*.apk
+*.aab
