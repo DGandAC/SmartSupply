@@ -49,7 +49,7 @@ fun SmartSupplyApp() {
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
             val scope = rememberCoroutineScope()
-            var apiUrl by remember { mutableStateOf("http://192.168.1.50:8000") }
+            var apiUrl by remember { mutableStateOf("http://192.168.68.101:8000") }
             var query by remember { mutableStateOf("") }
             var isLoading by remember { mutableStateOf(false) }
             var error by remember { mutableStateOf<String?>(null) }
@@ -222,5 +222,4 @@ fun SectionCard(title: String, rows: JSONArray) {
         }
     }
 }
-
 

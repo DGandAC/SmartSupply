@@ -333,6 +333,52 @@ def load_data() -> dict[str, pd.DataFrame]:
         "pakiety": "SELECT * FROM app.vPakietyZakupoweRobocze;",
         "pakiety_pozycje": "SELECT * FROM app.vPakietyZakupoweRoboczePozycje;",
         "towar360": "SELECT TOP 20000 * FROM app.vSmartSupplyTowar360Aktualne;",
+        "top_minima": """
+            SELECT
+                tm.OFS_Numer, tm.OFS_Opis, tm.OFS_Centrum, tm.OFS_TwrNumer, tm.OFS_TwrKod, tm.OFS_TwrNazwa,
+                tm.OFS_IloscMin, tm.OFS_Cena, tm.OFS_Magazyn,
+                tw.TowarID, tw.KodTowaru, tw.NazwaTowaru, tw.Producent, tw.GrupaTowarowa,
+                tw.CenaZakupuOstatnia, tw.CenaZakupuSrednia,
+                m.MagazynID, m.KodMagazynu, m.NazwaMagazynu,
+                v.KlasaABC, v.KlasaXYZ, v.KlasaABCXYZ, v.TypPopytu, v.ModelForecastu,
+                v.StatusRekomendacji, v.Priorytet, v.StanIlosc, v.StanDostepny, v.IloscWDrodze,
+                v.PrognozaDziennaBazowa, v.PrognozaDziennaSkorygowana, v.PrognozaNaLeadTime, v.PrognozaNaHoryzont,
+                v.ZapasBezpieczenstwa, v.MinimalnyZapas, v.MaksymalnyZapas, v.PunktPonowieniaZamowienia,
+                v.DocelowyPoziomZapasu, v.NiedoborDoROP, v.NiedoborDoTargetu,
+                v.SugerowanaIloscZakupu, v.SugerowanaWartoscZakupu, v.DniPokrycia,
+                v.RyzykoStockout, v.RyzykoNadmiaru, v.PowodRekomendacji,
+                CASE WHEN tm.OFS_IloscMin IS NULL THEN 0 WHEN tm.OFS_IloscMin <= 0.01 THEN 1 ELSE 0 END AS CzyTylkoPamietac,
+                CASE WHEN tw.TowarID IS NULL THEN 1 ELSE 0 END AS CzyBrakTowaruSmartSupply,
+                CASE WHEN m.MagazynID IS NULL THEN 1 ELSE 0 END AS CzyBrakMagazynuSmartSupply,
+                CASE WHEN v.TowarID IS NULL THEN 1 ELSE 0 END AS CzyBrakRekomendacjiSmartSupply,
+                CASE WHEN tm.OFS_IloscMin > 0.01 AND ISNULL(v.StanDostepny, 0) < tm.OFS_IloscMin THEN 1 ELSE 0 END AS CzyPonizejMinimumOpiekuna,
+                CASE WHEN tm.OFS_IloscMin > 0.01 AND ISNULL(v.StanDostepny, 0) < tm.OFS_IloscMin THEN tm.OFS_IloscMin - ISNULL(v.StanDostepny, 0) ELSE 0 END AS BrakDoMinimumOpiekuna,
+                CASE WHEN ISNULL(v.SugerowanaIloscZakupu, 0) > 0 THEN 1 ELSE 0 END AS CzySmartSupplySugerujeZakup,
+                CASE
+                    WHEN tm.OFS_IloscMin <= 0.01 THEN 'TYLKO_PAMIETAC'
+                    WHEN tw.TowarID IS NULL THEN 'BRAK_TOWARU'
+                    WHEN m.MagazynID IS NULL THEN 'BRAK_MAGAZYNU'
+                    WHEN v.TowarID IS NULL THEN 'BRAK_REKOMENDACJI'
+                    WHEN tm.OFS_IloscMin > 0.01 AND ISNULL(v.StanDostepny, 0) < tm.OFS_IloscMin THEN 'PONIZEJ_MINIMUM'
+                    ELSE 'OK'
+                END AS StatusMinimumOpiekuna,
+                CASE
+                    WHEN tm.OFS_IloscMin > 0.01 AND ISNULL(v.StanDostepny, 0) < tm.OFS_IloscMin
+                         AND (tm.OFS_IloscMin - ISNULL(v.StanDostepny, 0)) > ISNULL(v.SugerowanaIloscZakupu, 0) THEN 'OPIEKUN_WYZEJ'
+                    WHEN ISNULL(v.SugerowanaIloscZakupu, 0) > 0 THEN 'SMARTSUPPLY'
+                    WHEN tm.OFS_IloscMin <= 0.01 THEN 'TYLKO_PAMIETAC'
+                    ELSE 'BEZ_ZAKUPU'
+                END AS ZrodloSugerowanegoZakupu,
+                CASE
+                    WHEN tm.OFS_IloscMin > 0.01 AND ISNULL(v.StanDostepny, 0) < tm.OFS_IloscMin
+                         AND (tm.OFS_IloscMin - ISNULL(v.StanDostepny, 0)) > ISNULL(v.SugerowanaIloscZakupu, 0) THEN tm.OFS_IloscMin - ISNULL(v.StanDostepny, 0)
+                    ELSE ISNULL(v.SugerowanaIloscZakupu, 0)
+                END AS SugerowanaIloscZakupuPorownawcza
+            FROM wh.TowaryTopMinima tm
+            LEFT JOIN wh.Towar tw ON tw.ErpTwrGIDNumer = tm.OFS_TwrNumer
+            LEFT JOIN wh.Magazyn m ON m.KodMagazynu = tm.OFS_Magazyn
+            LEFT JOIN app.vSmartSupplyTowar360Aktualne v ON v.TowarID = tw.TowarID AND v.MagazynID = m.MagazynID;
+        """,
         "hist_kpi": "SELECT * FROM hist.vTrendKPI ORDER BY DataSnapshotu;",
         "hist_status": "SELECT * FROM hist.vTrendStatusow ORDER BY DataSnapshotu;",
     }
@@ -373,6 +419,7 @@ page = st.sidebar.radio(
     [
         "Dashboard",
         "Kupiec",
+        "Minima opiekunów",
         "Pakiety zakupowe",
         "Nadmiary",
         "Jakość danych",
@@ -486,6 +533,103 @@ elif page == "Kupiec":
         st.download_button("⬇️ Pobierz listę zakupową CSV", data=csv, file_name="SmartSupply_lista_zakupowa.csv", mime="text/csv", use_container_width=True)
 
 
+elif page == "Minima opiekunów":
+    st.subheader("Minima opiekunów")
+
+    minima = data["top_minima"].copy()
+    if minima.empty:
+        st.info("Brak danych w wh.TowaryTopMinima albo brak dostępu do tabeli.")
+        st.stop()
+
+    if f_magazyny and "KodMagazynu" in minima.columns:
+        minima = minima[minima["KodMagazynu"].isin(f_magazyny)]
+    if f_abcxyz and "KlasaABCXYZ" in minima.columns:
+        minima = minima[minima["KlasaABCXYZ"].isin(f_abcxyz)]
+    if f_statusy and "StatusRekomendacji" in minima.columns:
+        minima = minima[minima["StatusRekomendacji"].isin(f_statusy)]
+    if f_modele and "ModelForecastu" in minima.columns:
+        minima = minima[minima["ModelForecastu"].isin(f_modele)]
+
+    minima["KategoriaMin"] = minima["OFS_Opis"].astype("string").fillna("Brak opisu").str.replace(r"\s+", " ", regex=True).str.strip().str.slice(0, 90)
+
+    c_filter1, c_filter2, c_filter3 = st.columns([2, 1, 1])
+    with c_filter1:
+        selected_categories = st.multiselect("Kategorie / OFS_Opis", sorted(minima["KategoriaMin"].dropna().unique().tolist()))
+    with c_filter2:
+        statuses = sorted(minima["StatusMinimumOpiekuna"].dropna().unique().tolist()) if "StatusMinimumOpiekuna" in minima else []
+        selected_min_statuses = st.multiselect("Status minimum", statuses, default=[s for s in statuses if s in ("PONIZEJ_MINIMUM", "BRAK_REKOMENDACJI")])
+    with c_filter3:
+        sources = sorted(minima["ZrodloSugerowanegoZakupu"].dropna().unique().tolist()) if "ZrodloSugerowanegoZakupu" in minima else []
+        selected_sources = st.multiselect("Źródło propozycji", sources)
+
+    if selected_categories:
+        minima = minima[minima["KategoriaMin"].isin(selected_categories)]
+    if selected_min_statuses:
+        minima = minima[minima["StatusMinimumOpiekuna"].isin(selected_min_statuses)]
+    if selected_sources:
+        minima = minima[minima["ZrodloSugerowanegoZakupu"].isin(selected_sources)]
+
+    search = st.text_input("Szukaj w minimach", placeholder="Kod, nazwa, opis, magazyn")
+    if search:
+        mask = pd.Series(False, index=minima.index)
+        for col in ["OFS_TwrKod", "OFS_TwrNazwa", "KodTowaru", "NazwaTowaru", "OFS_Opis", "OFS_Magazyn", "KodMagazynu"]:
+            if col in minima.columns:
+                mask = mask | minima[col].astype(str).str.contains(search, case=False, na=False)
+        minima = minima[mask]
+
+    k1, k2, k3, k4, k5, k6 = st.columns(6)
+    k1.metric("Pozycje", format_number(len(minima)))
+    k2.metric("Kategorie", format_number(minima["KategoriaMin"].nunique() if "KategoriaMin" in minima else 0))
+    k3.metric("Poniżej minimum", format_number(minima["CzyPonizejMinimumOpiekuna"].sum() if "CzyPonizejMinimumOpiekuna" in minima else 0))
+    k4.metric("Tylko pamiętać", format_number(minima["CzyTylkoPamietac"].sum() if "CzyTylkoPamietac" in minima else 0))
+    k5.metric("Brak rek. SS", format_number(minima["CzyBrakRekomendacjiSmartSupply"].sum() if "CzyBrakRekomendacjiSmartSupply" in minima else 0))
+    k6.metric("Propozycja ilość", format_number(minima["SugerowanaIloscZakupuPorownawcza"].sum() if "SugerowanaIloscZakupuPorownawcza" in minima else 0))
+
+    if minima.empty:
+        st.info("Brak pozycji dla wybranych filtrów.")
+        st.stop()
+
+    tab_podsumowanie, tab_pozycje, tab_abc, tab_zamowienie = st.tabs(["Podsumowanie", "Pozycje", "ABCXYZ i rotacja", "Propozycja zamówienia"])
+
+    with tab_podsumowanie:
+        agg = minima.groupby("KategoriaMin", dropna=False).agg(
+            Pozycje=("OFS_TwrKod", "count"),
+            PonizejMinimum=("CzyPonizejMinimumOpiekuna", "sum"),
+            TylkoPamietac=("CzyTylkoPamietac", "sum"),
+            BrakRekomendacji=("CzyBrakRekomendacjiSmartSupply", "sum"),
+            SmartSupplySugeruje=("CzySmartSupplySugerujeZakup", "sum"),
+            BrakDoMinimum=("BrakDoMinimumOpiekuna", "sum"),
+            IloscPorownawcza=("SugerowanaIloscZakupuPorownawcza", "sum"),
+        ).reset_index()
+        fig = px.bar(agg.sort_values("IloscPorownawcza", ascending=False).head(30), x="IloscPorownawcza", y="KategoriaMin", orientation="h", hover_data=["Pozycje", "PonizejMinimum", "BrakRekomendacji", "SmartSupplySugeruje"])
+        fig.update_layout(yaxis={"categoryorder": "total ascending"})
+        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(agg.sort_values(["IloscPorownawcza", "PonizejMinimum"], ascending=False), use_container_width=True, hide_index=True)
+
+    with tab_pozycje:
+        cols = existing_cols(minima, ["OFS_Opis", "OFS_Magazyn", "OFS_TwrKod", "OFS_TwrNazwa", "OFS_IloscMin", "KodMagazynu", "KodTowaru", "NazwaTowaru", "KlasaABCXYZ", "TypPopytu", "ModelForecastu", "StatusMinimumOpiekuna", "StatusRekomendacji", "StanDostepny", "IloscWDrodze", "BrakDoMinimumOpiekuna", "MinimalnyZapas", "PunktPonowieniaZamowienia", "DocelowyPoziomZapasu", "SugerowanaIloscZakupu", "SugerowanaIloscZakupuPorownawcza", "DniPokrycia", "RyzykoStockout", "PowodRekomendacji"])
+        st.dataframe(minima[cols].sort_values(["StatusMinimumOpiekuna", "SugerowanaIloscZakupuPorownawcza"], ascending=[True, False]), use_container_width=True, hide_index=True, height=680)
+
+    with tab_abc:
+        c1, c2 = st.columns(2)
+        with c1:
+            abc = minima.groupby(["KlasaABCXYZ", "TypPopytu"], dropna=False).agg(Pozycje=("OFS_TwrKod", "count"), PonizejMinimum=("CzyPonizejMinimumOpiekuna", "sum"), IloscPorownawcza=("SugerowanaIloscZakupuPorownawcza", "sum")).reset_index()
+            abc_tree = prepare_treemap_df(abc, ["KlasaABCXYZ", "TypPopytu"])
+            fig = px.treemap(abc_tree, path=["KlasaABCXYZ", "TypPopytu"], values="Pozycje", color="IloscPorownawcza")
+            st.plotly_chart(fig, use_container_width=True)
+        with c2:
+            status = minima.groupby(["StatusMinimumOpiekuna", "StatusRekomendacji"], dropna=False).agg(Pozycje=("OFS_TwrKod", "count"), IloscPorownawcza=("SugerowanaIloscZakupuPorownawcza", "sum")).reset_index()
+            st.dataframe(status.sort_values("Pozycje", ascending=False), use_container_width=True, hide_index=True)
+
+    with tab_zamowienie:
+        proposal = minima[minima["SugerowanaIloscZakupuPorownawcza"].fillna(0) > 0].copy()
+        if proposal.empty:
+            st.info("Brak pozycji z dodatnią propozycją ilościową.")
+        else:
+            pcols = existing_cols(proposal, ["OFS_Opis", "KodMagazynu", "KodTowaru", "NazwaTowaru", "OFS_IloscMin", "StanDostepny", "BrakDoMinimumOpiekuna", "SugerowanaIloscZakupu", "SugerowanaIloscZakupuPorownawcza", "ZrodloSugerowanegoZakupu", "KlasaABCXYZ", "TypPopytu", "StatusRekomendacji", "RyzykoStockout"])
+            by_cat = proposal.groupby("KategoriaMin", dropna=False).agg(Pozycje=("OFS_TwrKod", "count"), IloscPorownawcza=("SugerowanaIloscZakupuPorownawcza", "sum")).reset_index().sort_values("IloscPorownawcza", ascending=False)
+            st.dataframe(by_cat, use_container_width=True, hide_index=True)
+            st.dataframe(proposal[pcols].sort_values(["KategoriaMin", "SugerowanaIloscZakupuPorownawcza"], ascending=[True, False]), use_container_width=True, hide_index=True, height=560)
 elif page == "Pakiety zakupowe":
     st.subheader("Pakiety zakupowe")
 
@@ -778,6 +922,8 @@ elif page == "Historia":
                 st.plotly_chart(fig, use_container_width=True)
 
         st.dataframe(hist, use_container_width=True, height=420)
+
+
 
 
 
