@@ -626,10 +626,11 @@ elif page == "Minima opiekunów":
         if proposal.empty:
             st.info("Brak pozycji z dodatnią propozycją ilościową.")
         else:
-            pcols = existing_cols(proposal, ["OFS_Opis", "KodMagazynu", "KodTowaru", "NazwaTowaru", "OFS_IloscMin", "StanDostepny", "BrakDoMinimumOpiekuna", "SugerowanaIloscZakupu", "SugerowanaIloscZakupuPorownawcza", "ZrodloSugerowanegoZakupu", "KlasaABCXYZ", "TypPopytu", "StatusRekomendacji", "RyzykoStockout"])
+            pcols = existing_cols(proposal, ["KategoriaMin", "OFS_Opis", "KodMagazynu", "KodTowaru", "NazwaTowaru", "OFS_IloscMin", "StanDostepny", "BrakDoMinimumOpiekuna", "SugerowanaIloscZakupu", "SugerowanaIloscZakupuPorownawcza", "ZrodloSugerowanegoZakupu", "KlasaABCXYZ", "TypPopytu", "StatusRekomendacji", "RyzykoStockout"])
             by_cat = proposal.groupby("KategoriaMin", dropna=False).agg(Pozycje=("OFS_TwrKod", "count"), IloscPorownawcza=("SugerowanaIloscZakupuPorownawcza", "sum")).reset_index().sort_values("IloscPorownawcza", ascending=False)
+            proposal_view = proposal.sort_values(["KategoriaMin", "SugerowanaIloscZakupuPorownawcza"], ascending=[True, False])
             st.dataframe(by_cat, use_container_width=True, hide_index=True)
-            st.dataframe(proposal[pcols].sort_values(["KategoriaMin", "SugerowanaIloscZakupuPorownawcza"], ascending=[True, False]), use_container_width=True, hide_index=True, height=560)
+            st.dataframe(proposal_view[pcols], use_container_width=True, hide_index=True, height=560)
 elif page == "Pakiety zakupowe":
     st.subheader("Pakiety zakupowe")
 
@@ -922,6 +923,7 @@ elif page == "Historia":
                 st.plotly_chart(fig, use_container_width=True)
 
         st.dataframe(hist, use_container_width=True, height=420)
+
 
 
 
