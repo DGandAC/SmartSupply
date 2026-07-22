@@ -25,5 +25,6 @@ Dokumentacja dashboardu znajduje się w `docs/README_SmartSupply_Dashboard.md`.
 
 ## Android
 
-Dokumentacja aplikacji Android znajduje się w docs/README_SmartSupply_Android.md.
+Dokumentacja aplikacji Android znajduje się w `docs/README_SmartSupply_Android.md`.
+
 
